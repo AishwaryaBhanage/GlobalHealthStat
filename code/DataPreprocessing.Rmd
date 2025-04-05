@@ -1,0 +1,238 @@
+---
+title: "DataPreprocessing"
+author: "Aishwarya Bhanage"
+date: "2025-04-05"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+# Load required libraries
+library(tidyverse)
+library(ggplot2)
+#library(DataExplorer)
+library(dplyr)
+
+```
+
+```{r}
+
+rawdata <- read.csv("C:\\Users\\abhanage\\OneDrive - Stony Brook University\\2_Spring 2025 Sem 2\\AMS 597- Statistical Computing\\Project\\GlobalHealthStat\\data\\GHD_raw.csv")
+head(rawdata)
+
+```
+
+```{r}
+#Rename the columns
+library(janitor)
+
+rawdata <- rawdata %>% clean_names()
+colnames(rawdata)
+
+#Duplicate Data Check
+cat("Duplicacy check: ", sum(duplicated(cleaned_data)))
+
+```
+
+```{r}
+#Structure of the data and shape of the data
+str(rawdata)
+
+```
+
+```{r}
+#Check for null/missing values
+
+rawdata[rawdata == ""] <- NA  
+
+# Function to calculate missing values
+missing_summary <- data.frame(
+  Column_Name = names(rawdata),
+  Missing_Count = sapply(rawdata, function(x) sum(is.na(x))),
+  Missing_Percentage = sapply(rawdata, function(x) round(sum(is.na(x)) / length(x) * 100, 2))
+)
+
+overall_na_percent <- sum(is.na(rawdata)) / (nrow(rawdata) * ncol(rawdata)) * 100
+
+# Print missing value summary
+print(missing_summary)
+cat("Overall na percentage:", overall_na_percent)
+
+```
+
+```{r}
+
+# Cleaning of Disease Category
+cat("Total null values in Disease Category before cleaning: ",sum(is.na(rawdata$disease_category)),"\n")
+cat("Total null values in Gender before cleaning: ",sum(is.na(rawdata$gender)),"\n")
+cat("Total null values in availability_of_vaccines_treatment before cleaning: ",sum(is.na(rawdata$availability_of_vaccines_treatment)),"\n")
+
+# Function to get the mode
+get_mode <- function(x) {
+  ux <- na.omit(unique(x))
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# Fill missing values in Disease Category using mode for each Disease Name
+rawdata <- rawdata %>% group_by(disease_name) %>% mutate(disease_category = ifelse(is.na(disease_category),                    get_mode(disease_category), disease_category)) %>% ungroup()
+
+rawdata <- rawdata %>% mutate(gender =  ifelse(is.na(gender), get_mode(gender), gender),
+                              availability_of_vaccines_treatment = ifelse(is.na(availability_of_vaccines_treatment), get_mode(availability_of_vaccines_treatment), availability_of_vaccines_treatment))
+
+cat("Total null values in Disease Category after cleaning: ",sum(is.na(rawdata$disease_category)))
+cat("Total null values in Gender after cleaning: ",sum(is.na(rawdata$gender)))
+cat("Total null values in availability_of_vaccines_treatment after cleaning: ",sum(is.na(rawdata$availability_of_vaccines_treatment)))
+
+```
+
+```{r}
+
+# Fill missing values using median based on Disease.Name and Disease.Category
+cat("Total null values in prevalence_rate before cleaning: ",sum(is.na(rawdata$prevalence_rate)),"\n")
+cat("Total null values in incidence_rate before cleaning: ",sum(is.na(rawdata$incidence_rate)),"\n")
+cat("Total null values in mortality_rate before cleaning: ",sum(is.na(rawdata$mortality_rate)),"\n")
+
+rawdata <- rawdata %>%
+  group_by(disease_name, disease_category) %>%
+  mutate(
+    prevalence_rate = ifelse(is.na(prevalence_rate), median(prevalence_rate, na.rm = TRUE), prevalence_rate),
+    incidence_rate  = ifelse(is.na(incidence_rate ),median(incidence_rate , na.rm = TRUE), incidence_rate),
+    mortality_rate = ifelse(is.na(mortality_rate), median(mortality_rate , na.rm = TRUE), mortality_rate)
+  ) %>%
+  ungroup()
+
+cat("Total null values in prevalence_rate after cleaning: ",sum(is.na(rawdata$prevalence_rate)),"\n")
+cat("Total null values in incidence_rate after cleaning: ",sum(is.na(rawdata$incidence_rate)),"\n")
+cat("Total null values in mortality_rate after cleaning: ",sum(is.na(rawdata$mortality_rate)),"\n")
+```
+```{r}
+
+# Age Group
+
+rawdata <- rawdata %>%
+  mutate(
+      age_group = case_when(
+      age_group >= 0 & age_group <= 18 ~ "Child",
+      age_group >= 19 & age_group <= 35 ~ "Young Adult",
+      age_group >= 36 & age_group <= 60 ~ "Adult",
+      age_group >= 61 ~ "Senior",
+      TRUE ~ NA_character_  # In case there are any other values or missing data
+    )
+  )
+
+```
+
+```{r}
+
+# Healthcare access column
+cat("Total null values in healthcare_access before cleaning: ",sum(is.na(rawdata$healthcare_access)),"\n")
+
+rawdata <- rawdata %>% group_by(country) %>% 
+  mutate(healthcare_access = ifelse(is.na(healthcare_access), mean(healthcare_access, na.rm = TRUE),healthcare_access)) %>% ungroup()
+
+cat("Total null values in healthcare_access after cleaning: ",sum(is.na(rawdata$healthcare_access)),"\n")
+
+```
+
+```{r}
+
+cat("Total null values in doctors_per_1000 before cleaning: ",sum(is.na(rawdata$doctors_per_1000)),"\n")
+cat("Total null values in hospital_beds_per_1000 before cleaning: ",sum(is.na(rawdata$hospital_beds_per_1000)),"\n")
+cat("Total null values in urbanization_rate before cleaning: ",sum(is.na(rawdata$urbanization_rate)),"\n")
+
+rawdata <- rawdata %>% group_by(country, year) %>% 
+  mutate(doctors_per_1000 = ifelse(is.na(doctors_per_1000), mean(doctors_per_1000, na.rm = TRUE),doctors_per_1000),
+         hospital_beds_per_1000 = ifelse(is.na(hospital_beds_per_1000), mean(hospital_beds_per_1000, na.rm = TRUE), hospital_beds_per_1000),
+         urbanization_rate = ifelse(is.na(urbanization_rate), mean(urbanization_rate, na.rm = TRUE), urbanization_rate)) %>% ungroup()
+
+cat("Total null values in doctors_per_1000 after cleaning: ",sum(is.na(rawdata$doctors_per_1000)),"\n")
+cat("Total null values in hospital_beds_per_1000 after cleaning: ",sum(is.na(rawdata$hospital_beds_per_1000)),"\n")
+cat("Total null values in urbanization_rate after cleaning: ",sum(is.na(rawdata$urbanization_rate)),"\n")
+```
+
+```{r}
+
+cat("Total null values in average_treatment_cost_usd before cleaning: ",sum(is.na(rawdata$average_treatment_cost_usd)),"\n")
+
+rawdata <- rawdata %>% group_by(disease_name, disease_category, treatment_type) %>% 
+  mutate(average_treatment_cost_usd = ifelse(is.na(average_treatment_cost_usd), mean(average_treatment_cost_usd, na.rm = TRUE),average_treatment_cost_usd)) %>% ungroup()
+
+cat("Total null values in average_treatment_cost_usd after cleaning: ",sum(is.na(rawdata$average_treatment_cost_usd)),"\n")
+
+```
+
+
+```{r}
+
+#Check for null values after cleaning the data and imputing the values
+missing_summary <- data.frame(
+  Column_Name = names(rawdata),
+  Missing_Count = sapply(rawdata, function(x) sum(is.na(x))),
+  Missing_Percentage = sapply(rawdata, function(x) round(sum(is.na(x)) / length(x) * 100, 2))
+)
+
+overall_na_percent <- sum(is.na(rawdata)) / (nrow(rawdata) * ncol(rawdata)) * 100
+
+# Print missing value summary
+print(missing_summary)
+cat("Overall na percentage:", overall_na_percent)
+
+```
+
+```{r}
+
+# Separating the numeric and categoric features
+
+numeric_cols <- rawdata %>% select_if(is.numeric)
+categoric_cols <- rawdata %>% select_if(~!is.numeric(.))
+
+print(paste(ncol(numeric_cols), ncol(categoric_cols))) 
+
+colnames(numeric_cols)
+cat("\n")
+colnames(categoric_cols)
+
+```
+
+```{r}
+# Outlier treatment for numeric columns using IQR
+
+remove_outliers <- function(x) {
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR_value <- IQR(x, na.rm = TRUE)
+  
+  # Removing outliers outside the range Q1 - 1.5*IQR and Q3 + 1.5*IQR
+  x[x < (Q1 - 1.5 * IQR_value) | x > (Q3 + 1.5 * IQR_value)] <- NA
+  
+  x <- round(x, 2)
+  
+  return(x)
+}
+
+# Apply the function to numeric columns
+numeric_cols <- numeric_cols %>%
+  mutate_all(remove_outliers)
+
+```
+
+
+```{r}
+
+# Cleaned dataset
+# Merge categorical and numeric columns into one data frame
+cleaned_data <- cbind(categoric_cols, numeric_cols)
+
+
+# Write the cleaned data to a CSV file
+write.csv(cleaned_data, file = "C:\\Users\\abhanage\\OneDrive - Stony Brook University\\2_Spring 2025 Sem 2\\AMS 597- Statistical Computing\\Project\\GlobalHealthStat\\data\\cleaned_data_for_EDA.csv", row.names = FALSE)
+
+```
+
+```{r}
+
+```
