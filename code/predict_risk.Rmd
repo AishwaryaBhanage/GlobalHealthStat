@@ -1,0 +1,244 @@
+---
+title: "Q3"
+author: "Tamali Halder"
+date: "2025-04-09"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+# Load libraries
+library(dplyr)
+library(ggplot2)
+library(caret)       # for modeling and evaluation
+library(pROC)        # for ROC-AUC
+library(xgboost)     # for XGBoost
+library(randomForest)
+library(e1071)       # for confusion matrix (if not using caret's version)
+
+# 1. DATA LOADING
+global_health <- read.csv("final_data.csv")
+
+# Calculate the 75th percentile of incidence_rate
+threshold <- quantile(global_health$incidence_rate, 0.75, na.rm = TRUE)
+
+# Create risk_label column: 'High' if incidence_rate > 75th percentile, else 'Low'
+global_health$risk_label <- ifelse(global_health$incidence_rate > threshold, "High", "Low")
+
+# Convert to factor for modeling
+global_health$risk_label <- factor(global_health$risk_label, levels = c("Low", "High"))
+
+# Check distribution
+table(global_health$risk_label)
+
+# Take a look at your data
+head(global_health)
+summary(global_health)
+
+
+# 2. DATA PREPROCESSING
+
+# We'll choose some columns related to infrastructure & socioeconomics
+model_data <- global_health %>%
+  select(
+    risk_label,
+    healthcare_access,
+    doctors_per_1000,
+    hospital_beds_per_1000,
+    per_capita_income_usd,
+    education_index,
+    urbanization_rate
+  )
+
+# Check structure
+str(model_data)
+
+# Split into training and testing sets (70% training, 30% test, for instance)
+set.seed(123)  # For reproducibility
+train_index <- createDataPartition(model_data$risk_label, p = 0.7, list = FALSE)
+train_data <- model_data[train_index, ]
+test_data  <- model_data[-train_index, ]
+
+
+# 3A. LOGISTIC REGRESSION
+
+# Fit the logistic regression model
+logistic_model <- glm(risk_label ~ .,
+                      data = train_data,
+                      family = binomial(link = "logit"))
+
+summary(logistic_model)
+
+# Predict on test data
+logistic_probs <- predict(logistic_model, newdata = test_data, type = "response")
+
+# Convert probabilities to labels using 0.5 cutoff
+logistic_preds <- ifelse(logistic_probs > 0.5, "High", "Low") %>% as.factor()
+
+# Confusion Matrix
+cm_logistic <- confusionMatrix(logistic_preds, test_data$risk_label, positive = "High")
+cm_logistic
+
+# Accuracy
+accuracy_logistic <- cm_logistic$overall["Accuracy"]
+accuracy_logistic
+
+# ROC-Area Under the Curve
+roc_logistic <- roc(response = test_data$risk_label,
+                    predictor = logistic_probs,
+                    levels = c("Low", "High"))
+auc_logistic <- auc(roc_logistic)
+auc_logistic
+
+# Plot ROC curve
+plot(roc_logistic, main = "Logistic Regression ROC Curve")
+
+
+
+# 3B. XGBOOST CLASSIFIER
+
+# XGBoost requires numeric matrices.
+
+# Convert response to numeric: 1 for High, 0 for Low
+train_label <- ifelse(train_data$risk_label == "High", 1, 0)
+test_label  <- ifelse(test_data$risk_label == "High", 1, 0)
+
+# Remove the response from feature sets
+train_features <- train_data %>% select(-risk_label)
+test_features  <- test_data  %>% select(-risk_label)
+
+# Convert to matrix
+train_matrix <- as.matrix(train_features)
+test_matrix  <- as.matrix(test_features)
+
+# Set up XGBoost parameters
+xgb_params <- list(
+  objective = "binary:logistic",  # logistic classification
+  eval_metric = "error",
+  max_depth = 3,
+  eta = 0.1
+)
+
+# Train the XGBoost model
+xgb_model <- xgboost(
+  data = train_matrix,
+  label = train_label,
+  params = xgb_params,
+  nrounds = 100,
+  verbose = 0
+)
+
+# Predictions
+xgb_probs <- predict(xgb_model, newdata = test_matrix)
+xgb_preds <- ifelse(xgb_probs > 0.5, 1, 0)
+
+# Convert predictions back to factor
+xgb_preds_factor <- factor(ifelse(xgb_preds == 1, "High", "Low"),
+                           levels = c("Low", "High"))
+
+# Confusion Matrix
+cm_xgb <- confusionMatrix(xgb_preds_factor,
+                          factor(ifelse(test_label == 1, "High", "Low"),
+                                 levels = c("Low", "High")),
+                          positive = "High")
+cm_xgb
+
+# Accuracy
+accuracy_xgb <- cm_xgb$overall["Accuracy"]
+accuracy_xgb
+
+# ROC-AUC
+roc_xgb <- roc(response = factor(test_label, levels = c(0,1)),
+               predictor = xgb_probs)
+auc_xgb <- auc(roc_xgb)
+auc_xgb
+
+# Plot ROC curve
+plot(roc_xgb, main = "XGBoost ROC Curve")
+
+# 3.C Random Forest
+
+rf_model <- randomForest(
+  risk_label ~ .,
+  data = train_data,
+  ntree = 500,
+  mtry = 3,
+  importance = TRUE
+)
+
+# Predictions
+rf_preds <- predict(rf_model, newdata = test_data)
+rf_probs <- predict(rf_model, newdata = test_data, type = "prob")[, "High"]
+
+# Evaluation
+cm_rf <- confusionMatrix(rf_preds, test_data$risk_label, positive = "High")
+roc_rf <- roc(test_data$risk_label, rf_probs, levels = c("Low", "High"))
+
+# Output metrics
+print(cm_rf)
+
+# Plot ROC
+plot(roc_rf, main = "Random Forest ROC Curve")
+
+# Variable Importance Plot
+varImpPlot(rf_model, main = "Variable Importance - Random Forest")
+
+
+# 4B. SVM Model
+svm_model <- svm(
+  risk_label ~ .,
+  data = train_data,
+  kernel = "radial",
+  probability = TRUE,
+  cost = 1,
+  gamma = 0.1
+)
+
+svm_probs <- attr(predict(svm_model, test_data, probability = TRUE), "probabilities")[, "High"]
+svm_preds <- ifelse(svm_probs > 0.5, "High", "Low") %>% factor(levels = c("Low", "High"))
+
+# Evaluation
+cm_svm <- confusionMatrix(svm_preds, test_data$risk_label, positive = "High")
+roc_svm <- roc(test_data$risk_label, svm_probs, levels = c("Low", "High"))
+
+# Results
+print(cm_svm)
+
+# Plot ROC Curve
+plot(roc_svm, main = "SVM ROC Curve (Row-level Labeling)")
+
+# RESULTS AND INTERPRETATION
+
+# Print out final metrics
+cat("\n", "RESULTS", "\n")
+cat("Logistic Regression Accuracy:", accuracy_logistic, "\n")
+cat("Logistic Regression AUC:", auc_logistic, "\n\n")
+
+cat("XGBoost Accuracy:", accuracy_xgb, "\n")
+cat("XGBoost AUC:", auc_xgb, "\n\n")
+
+cat("Random Forest Accuracy:", cm_rf$overall["Accuracy"], "\n")
+cat("Random Forest AUC:", auc(roc_rf), "\n\n")
+
+cat("SVM Accuracy:", cm_svm$overall["Accuracy"], "\n")
+cat("SVM AUC:", auc(roc_svm), "\n\n")
+
+# Conclusion
+cat("CONCLUSION", "\n")
+cat("All four models—Logistic Regression, XGBoost, Random Forest, and SVM—performed consistently with comparable accuracy around 74–75%.\n")
+cat("This consistency across diverse algorithms suggests a stable relationship between health and socioeconomic indicators and outbreak risk.\n")
+cat("The models offer a strong foundation for identifying general patterns in disease vulnerability, and can be valuable tools for guiding public health strategies.\n")
+cat("Future enhancements could further improve predictive performance by integrating additional indicators or exploring more granular health data.\n")
+
+
+
+```
+
+
+
+
