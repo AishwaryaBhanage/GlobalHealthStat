@@ -1,0 +1,232 @@
+---
+title: "exploratory_data_analysis"
+author: "Rutika Avinash Kadam"
+date: "2025-04-08"
+output: html_document
+---
+```{r}
+library(plotly)
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+```
+```{r}
+clean_data <- read.csv("D:\\Projects\\Statistical Computing Project\\GlobalHealthStat\\data\\cleaned_data_for_EDA.csv")
+head(clean_data)
+```
+```{r}
+str(clean_data)
+```
+```{r}
+
+#Find the number of unique values in each column
+unique_values <- sapply(clean_data, function(x) length(unique(x)))
+
+#Display the result
+print(unique_values)
+```
+```{r}
+#Separating the numeric and categoric features
+numeric_cols <- clean_data %>% select_if(is.numeric)
+categoric_cols <- clean_data %>% select_if(~!is.numeric(.))
+
+cat("We have ",ncol(categoric_cols)," categorical columns.","\n","\n")
+colnames(categoric_cols)
+cat("\n")
+cat("We have ",ncol(numeric_cols)," numerical columns.","\n","\n")
+colnames(numeric_cols)
+```
+```{r}
+#Identify categorical columns (factor or character columns)
+categoric_cols <- sapply(clean_data, function(x) is.factor(x) | is.character(x))
+categoric_cols <- names(categoric_cols[categoric_cols])
+
+#Print unique values for each categorical column
+for (col in categoric_cols) {
+  unique_vals <- unique(clean_data[[col]])
+  num_unique <- length(unique_vals)
+  cat("Unique values in column", col,"are ",num_unique, ":\n")
+  print(unique(clean_data[[col]]))
+  cat("\n")
+}
+```
+```{r}
+categoric_cols <- c("country", "disease_name", "disease_category", "age_group", 
+                    "gender", "treatment_type", "availability_of_vaccines_treatment")
+# Loop through each column to display the value-to-number mapping
+for (col in categoric_cols) {
+  cat("Label Encoding for", col, ":\n")
+  
+  if (col == "age_group") {
+    # Define custom order for age_group
+    custom_levels <- c("child", "young adult", "adult", "senior")
+    encoding <- factor(clean_data[[col]], levels = custom_levels)
+  } else {
+    encoding <- factor(clean_data[[col]])
+  }
+  
+  # Create the value-to-number mapping
+  value_to_number <- data.frame(Value = levels(encoding), Encoded = 0:(length(levels(encoding)) - 1))
+  
+  print(value_to_number)
+  cat("\n")
+}
+```
+```{r}
+#Implementing Label Encoding for all categorical veriables
+# Apply Label Encoding to each categorical column, starting from 0
+# Define custom order for 'age_group' column
+age_group_order <- c("Child", "Young Adult", "Adult", "Senior")
+
+# Loop through each column to apply custom encoding and print the mapping for 'age_group'
+for (col in categoric_cols) {
+  if (col == "age_group") {
+    # Apply custom encoding for 'age_group' column
+    clean_data[[col]] <- factor(clean_data[[col]], levels = age_group_order)
+    clean_data[[col]] <- as.numeric(clean_data[[col]]) - 1  # Start encoding from 0
+  } else {
+    # Apply label encoding for other columns
+    clean_data[[col]] <- as.numeric(factor(clean_data[[col]])) - 1
+  }
+}
+head(clean_data)
+```
+```{r}
+# Define your numeric column names
+# Define your numeric column names
+numeric_cols <- c("year", "prevalence_rate", "incidence_rate", "mortality_rate", 
+                  "population_affected", "healthcare_access", "doctors_per_1000", 
+                  "hospital_beds_per_1000", "average_treatment_cost_usd", "recovery_rate", 
+                  "dal_ys", "improvement_in_5_years", "per_capita_income_usd", 
+                  "education_index", "urbanization_rate")
+
+# Initialize vectors
+columns_with_outliers <- c()
+outlier_counts <- c()
+
+# Loop over each numeric column to detect outliers and count them
+for (col in numeric_cols) {
+  # Extract the column and remove NA values
+  x <- clean_data[[col]]
+  x <- x[!is.na(x)]
+  
+  # Check if the column has enough data to compute quartiles
+  if (length(x) < 4) next
+  
+  # Calculate Q1, Q3, and the IQR
+  Q1 <- quantile(x, 0.25)
+  Q3 <- quantile(x, 0.75)
+  IQR_val <- IQR(x)
+  
+  # Calculate lower and upper bounds
+  lower_bound <- Q1 - 1.5 * IQR_val
+  upper_bound <- Q3 + 1.5 * IQR_val
+  
+  # Find outlier indices
+  outlier_indices <- which(x < lower_bound | x > upper_bound)
+  
+  # If any outlier exists, record it
+  if (length(outlier_indices) > 0) {
+    columns_with_outliers <- c(columns_with_outliers, col)
+    outlier_counts[col] <- length(outlier_indices)
+  }
+}
+
+# Create a data frame summarizing the outlier counts
+outlier_summary <- data.frame(
+  Column = names(outlier_counts),
+  Outlier_Count = as.integer(outlier_counts)
+)
+
+# Print the summary sorted by count
+outlier_summary <- outlier_summary[order(-outlier_summary$Outlier_Count), ]
+print(outlier_summary)
+
+
+```
+```{r}
+# Assuming your dataset is named 'df'
+# Define the variable names and corresponding titles for the plots
+variables <- c("average_treatment_cost_usd", "education_index", "per_capita_income_usd")
+titles <- c("Average Treatment Cost (USD)",
+            "Education Index",
+            "Per Capita Income (USD)")
+
+# Create an empty list to store the interactive plots
+plot_list <- list()
+
+# Loop over each variable to create individual box plots
+for (i in seq_along(variables)) {
+  p <- ggplot(clean_data, aes_string(x = "''", y = variables[i])) +
+    geom_boxplot(fill = "pink", color = "black", 
+                 outlier.colour = "red", outlier.shape = 16) +
+    labs(title = titles[i],
+         x = "",
+         y = titles[i]) +
+    theme_minimal()
+  
+  # Convert the ggplot object into an interactive plotly object and store it
+  plot_list[[i]] <- ggplotly(p)
+}
+
+# Arrange the plots in one row (nrows = 1) while keeping each plot's y-axis independent
+final_plot <- subplot(plot_list, nrows = 1, shareY = FALSE, titleX = TRUE, titleY = TRUE) %>% 
+  layout(
+    title = list(
+      text = "Box Plots for Avg Treatment Cost, Education Index, & Per Capita Income(USD)",
+      x = 0.5  # Center the main title
+    )
+  )
+
+# Display the final interactive plot
+final_plot
+```
+```{r}
+#Removing Outliers-replacing outliers with median of that column
+#Define target columns where you want to replace outliers with median
+target_cols <- c("average_treatment_cost_usd", "mortality_rate", "prevalence_rate")
+
+#Loop through each column
+for (col in target_cols) {
+  #Extract the column vector
+  x <- clean_data[[col]]
+  
+  #Skip if all values are NA or fewer than 4 non-NA values
+  if (sum(!is.na(x)) < 4) next
+  
+  #Compute Q1, Q3, and IQR
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR_val <- Q3 - Q1
+  
+  #Define bounds
+  lower_bound <- Q1 - 1.5 * IQR_val
+  upper_bound <- Q3 + 1.5 * IQR_val
+  
+  #Calculate the median (excluding NA)
+  med <- median(x, na.rm = TRUE)
+  
+  #Replace outliers with median
+  x[x < lower_bound | x > upper_bound] <- med
+  
+  #Assign the cleaned column back
+  clean_data[[col]] <- x
+}
+```
+```{r}
+#Check for null/missing values
+clean_data[clean_data == ""] <- NA  
+
+# Function to calculate missing values
+missing_summary <- data.frame(
+  Column_Name = names(clean_data),
+  Missing_Count = sapply(clean_data, function(x) sum(is.na(x))),
+  Missing_Percentage = sapply(clean_data, function(x) round(sum(is.na(x)) / length(x) * 100, 2))
+)
+# Print missing value summary
+print(missing_summary)
+```
+```{r}
+#Saving final without outliers and label encoding
+write.csv(clean_data, file = "D:\\Projects\\Statistical Computing Project\\GlobalHealthStat\\data\\final_data.csv", row.names = FALSE)
+```
