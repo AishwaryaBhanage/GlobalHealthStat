@@ -51,45 +51,45 @@ for (col in categoric_cols) {
 }
 ```
 ```{r}
-categoric_cols <- c("country", "disease_name", "disease_category", "age_group", 
-                    "gender", "treatment_type", "availability_of_vaccines_treatment")
+#categoric_cols <- c("country", "disease_name", "disease_category", "age_group", 
+#                    "gender", "treatment_type", "availability_of_vaccines_treatment")
 # Loop through each column to display the value-to-number mapping
-for (col in categoric_cols) {
-  cat("Label Encoding for", col, ":\n")
+#for (col in categoric_cols) {
+#  cat("Label Encoding for", col, ":\n")
   
-  if (col == "age_group") {
+#  if (col == "age_group") {
     # Define custom order for age_group
-    custom_levels <- c("child", "young adult", "adult", "senior")
-    encoding <- factor(clean_data[[col]], levels = custom_levels)
-  } else {
-    encoding <- factor(clean_data[[col]])
-  }
+#    custom_levels <- c("child", "young adult", "adult", "senior")
+#   encoding <- factor(clean_data[[col]], levels = custom_levels)
+#  } else {
+#    encoding <- factor(clean_data[[col]])
+#  }
   
   # Create the value-to-number mapping
-  value_to_number <- data.frame(Value = levels(encoding), Encoded = 0:(length(levels(encoding)) - 1))
+#  value_to_number <- data.frame(Value = levels(encoding), Encoded = 0:(length(levels(encoding)) - 1))
   
-  print(value_to_number)
-  cat("\n")
-}
+#  print(value_to_number)
+#  cat("\n")
+#}
 ```
 ```{r}
 #Implementing Label Encoding for all categorical veriables
 # Apply Label Encoding to each categorical column, starting from 0
 # Define custom order for 'age_group' column
-age_group_order <- c("Child", "Young Adult", "Adult", "Senior")
+#age_group_order <- c("Child", "Young Adult", "Adult", "Senior")
 
 # Loop through each column to apply custom encoding and print the mapping for 'age_group'
-for (col in categoric_cols) {
-  if (col == "age_group") {
+#for (col in categoric_cols) {
+#  if (col == "age_group") {
     # Apply custom encoding for 'age_group' column
-    clean_data[[col]] <- factor(clean_data[[col]], levels = age_group_order)
-    clean_data[[col]] <- as.numeric(clean_data[[col]]) - 1  # Start encoding from 0
-  } else {
+#    clean_data[[col]] <- factor(clean_data[[col]], levels = age_group_order)
+#    clean_data[[col]] <- as.numeric(clean_data[[col]]) - 1  # Start encoding from 0
+#  } else {
     # Apply label encoding for other columns
-    clean_data[[col]] <- as.numeric(factor(clean_data[[col]])) - 1
-  }
-}
-head(clean_data)
+#    clean_data[[col]] <- as.numeric(factor(clean_data[[col]])) - 1
+#  }
+#}
+#head(clean_data)
 ```
 ```{r}
 # Define your numeric column names
@@ -228,5 +228,239 @@ print(missing_summary)
 ```
 ```{r}
 #Saving final without outliers and label encoding
-write.csv(clean_data, file = "D:\\Projects\\Statistical Computing Project\\GlobalHealthStat\\data\\final_data.csv", row.names = FALSE)
+write.csv(clean_data, file = "D:\\Projects\\Statistical Computing Project\\GlobalHealthStat\\data\\final_data1.csv", row.names = FALSE)
 ```
+```{r}
+final_data <- read.csv("D:\\Projects\\Statistical Computing Project\\GlobalHealthStat\\data\\final_data1.csv")
+head(final_data)
+```
+
+```{r}
+library(gridExtra)
+library(ggpubr)  
+
+
+# Sort numeric columns alphabetically (optional)
+numeric_cols <- sort(c("prevalence_rate", "incidence_rate", "mortality_rate", 
+                       "population_affected", "healthcare_access", "doctors_per_1000", 
+                       "hospital_beds_per_1000", "average_treatment_cost_usd", 
+                       "recovery_rate", "dal_ys", "improvement_in_5_years", 
+                       "per_capita_income_usd", "education_index", "urbanization_rate"))
+
+# Create list to store plots
+plot_list <- list()
+
+# Create individual plots with styling
+for (col in numeric_cols) {
+  p <- ggplot(final_data, aes_string(x = col)) +
+    geom_histogram(aes(y = ..density..), bins = 30, fill = "pink", alpha = 0.5) +
+    geom_density(color = "red", size = 0.8) +
+    theme_minimal(base_size = 14) +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 11, face = "bold"),
+      axis.title = element_text(face = "bold"),
+      axis.title.x = element_text(size = 10, face = "plain"), 
+      axis.title.y = element_text(size = 10, face = "plain"),
+      axis.text.x = element_text(size = 9, face = "plain"),   # X ticks
+      axis.text.y = element_text(size = 9, face = "plain") 
+    ) +
+    labs(
+      title = paste("Histogram & Density of", gsub("_", " ", col)),
+      x = gsub("_", " ", col),
+      y = "Density"
+    )
+  
+  plot_list[[length(plot_list) + 1]] <- p
+}
+
+# Display 2 plots vertically per window
+for (i in seq(1, length(plot_list), by = 2)) {
+  plots_to_show <- plot_list[i:min(i+1, length(plot_list))]
+  do.call(grid.arrange, c(plots_to_show, ncol = 1))
+}
+```
+```{r}
+library(ggplot2)
+library(dplyr)
+
+
+
+# Basic improved scatterplot
+ggplot(final_data, aes(x = prevalence_rate, y = mortality_rate, color = disease_name)) +
+  geom_point(alpha = 0.5, size = 2) +
+  theme_minimal() +
+  scale_color_viridis_d(option = "plasma") +  # nicer color palette
+  labs(
+    title = "Prevalence Rate vs Mortality Rate by Disease",
+    x = "Prevalence Rate (%)",
+    y = "Mortality Rate (%)",
+    color = "Disease"
+  ) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    legend.position = "none"  # Hide if too many disease types
+  )
+```
+```{r}
+#Group by country and compute averages
+grouped_df <- final_data %>%
+  group_by(country) %>%
+  summarise(
+    healthcare_access_avg = mean(healthcare_access, na.rm = TRUE),
+    mortality_rate_avg = mean(mortality_rate, na.rm = TRUE)
+  ) %>%
+  arrange(country) %>%
+  mutate(Country_Number = row_number())  # Capitalize to match exactly
+
+#Create a label column for the legend
+grouped_df <- grouped_df %>%
+  mutate(Label = paste0(Country_Number, " - ", country))
+
+#Plot
+ggplot(grouped_df, aes(x = healthcare_access_avg, y = mortality_rate_avg)) +
+  geom_point(aes(color = factor(Country_Number)), size = 4) +
+  geom_text(aes(label = Country_Number), vjust = -1, size = 3.5) +
+  scale_color_manual(
+    values = scales::hue_pal()(nrow(grouped_df)),
+    labels = grouped_df$Label
+  ) +
+  labs(
+    title = "Healthcare Access vs Mortality Rate by Country",
+    x = "Healthcare Access (%)",
+    y = "Mortality Rate (%)",
+    color = "Country (No - Name)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    legend.position = "right",
+    legend.text = element_text(size = 8),
+    legend.title = element_text(size = 10)
+  )
+```
+Observations:
+No Strong Direct Relationship Between healthcare_access and mortality_rate
+Among the 8 countries analyzed, higher healthcare_access does not consistently correspond to lower mortality_rate. This suggests that access alone might not be the sole factor driving mortality — quality, distribution, or utilization of healthcare services could be influential.
+
+USA (Country 8): Highest healthcare_access, But Elevated mortality_rate
+Despite having the highest average healthcare access, the USA still shows a relatively high mortality_rate. This could imply inefficiencies in the healthcare system, high costs (average_treatment_cost_usd), or disparities in access across subgroups.
+
+China (Country 2): Lowest mortality_rate Despite Mid-Level Access
+China displays the lowest average mortality_rate, despite only moderate healthcare_access. This might reflect effective public health measures, better availability_of_vaccines_treatment, or a population profile with fewer comorbidities.
+
+Argentina (Country 1): Low healthcare_access, High mortality_rate
+Argentina ranks lower in healthcare accessibility and higher in mortality, which could signal gaps in health infrastructure, limited hospital_beds_per_1000, or lower availability of essential treatments.
+
+Russia (Country 5) and South Africa (Country 6): High Access, Yet High Mortality
+These countries show that even with comparatively high healthcare_access, their mortality_rate remains elevated. This could be due to challenges like high incidence_rate of chronic or infectious diseases, lower recovery_rate, or socioeconomic disparities (per_capita_income_usd, education_index).
+
+India (Country 3): Moderate Access, Moderate Mortality
+India maintains a balanced profile, where moderate healthcare_access correlates with an acceptable mortality_rate. This might reflect efficient resource use, lower average_treatment_cost_usd, or stronger community-level care.
+```{r}
+library(gridExtra)
+library(grid) 
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(RColorBrewer)  # For color palettes
+
+
+# Filter to the 8 countries of interest and years 2020–2024
+target_countries <- c("Argentina", "China", "India", "Nigeria", "Russia", "South Africa", "UK", "USA")
+df_filtered <- final_data %>%
+  filter(country %in% target_countries, year >= 2020 & year <= 2024)
+
+# Find top disease per year for each country based on population_affected
+top_diseases <- df_filtered %>%
+  group_by(country, year, disease_name) %>%
+  summarise(total_affected = sum(population_affected, na.rm = TRUE), .groups = 'drop') %>%
+  group_by(country, year) %>%
+  slice_max(order_by = total_affected, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+# Create individual plots
+plots <- lapply(target_countries, function(cntry) {
+  plot_data <- top_diseases %>% filter(country == cntry)
+  
+  ggplot(plot_data, aes(x = factor(year), y = total_affected, fill = disease_name)) +
+    geom_bar(stat = "identity") +
+    
+    # Data labels in the center, vertical
+    geom_text(aes(label = disease_name),
+              angle = 90, vjust = 0.5, hjust = 0.5, size = 3, color = "black") +
+
+    # Apply a color palette
+    scale_fill_brewer(palette = "Set2") +
+
+    # Format Y-axis as K
+    scale_y_continuous(labels = function(x) paste0(x / 1000, "K")) +
+
+    labs(title = cntry, x = "Year", y = "Population Affected") +
+    theme_minimal(base_size = 10) +
+    theme(
+      plot.title = element_text(size = 10, hjust = 0.5),
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 8),
+      axis.text.y = element_text(size = 8),
+      axis.title.x = element_text(size = 8),
+      axis.title.y = element_text(size = 8),
+      legend.position = "none",
+      legend.key.size = unit(0.4, "cm")
+    )
+})
+
+# Draw the grid layout
+grid.newpage()
+grid.draw(arrangeGrob(grobs = plots, ncol = 4,
+                      top = textGrob("Top Disease per Year by Population Affected (2020–2024)",
+                                     gp = gpar(fontsize = 14, fontface = "bold"))))
+
+```
+ Country-Wise Observations
+🇦🇷 Argentina
+Each year shows a different disease as most widespread: from Ebola to Measles.
+
+This variety might suggest changing public health priorities or seasonal outbreaks.
+
+🇨🇳 China
+Cancer dominated two years (2022–2023), and Asthma rose sharply in 2024.
+
+The upward trend in Asthma cases may indicate environmental or air quality concerns.
+
+🇮🇳 India
+A strong presence of neurodegenerative and chronic diseases like Parkinson’s, Alzheimer’s, and HIV/AIDS.
+
+This could reflect an aging population and increasing non-communicable disease burden.
+
+🇳🇬 Nigeria
+Leprosy dominates 3 out of 5 years — a rare but regionally persistent disease.
+
+Tuberculosis and Polio also feature, reflecting infectious disease challenges in the region.
+
+🇷🇺 Russia
+Consistently high cases across Zika, Hepatitis, Polio, and Tuberculosis.
+
+The 2024 rise in Tuberculosis may signal an outbreak or declining control efforts.
+
+🇿🇦 South Africa
+Highly variable but HIV/AIDS and Diabetes dominate recent years.
+
+Shift from infectious to chronic conditions in 2023–2024 may reflect transitioning health dynamics.
+
+🇬🇧 UK
+HIV/AIDS leads in multiple years, with COVID-19 peaking in 2021.
+
+By 2024, Influenza emerges — possible return of seasonal flu after pandemic suppression.
+
+🇺🇸 USA
+Zika and Hepatitis peak in 2021–2022, followed by consistent Measles cases.
+
+Recurring Measles in 2023–2024 could hint at vaccination gaps or hesitancy.
+
+Cross-Country Insights
+HIV/AIDS is a leading concern in India, UK, South Africa — suggesting persistent burden.
+
+Infectious diseases like Polio, Leprosy, and Tuberculosis dominate in Nigeria and Russia.
+
+Chronic and neurological diseases (e.g., Parkinson's, Alzheimer’s) are rising in India and Argentina.
+
+Countries like the USA and UK see resurgence in vaccine-preventable diseases, possibly post-COVID.
