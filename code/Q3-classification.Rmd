@@ -103,6 +103,11 @@ tree_model <- rpart(train_y ~ ., data = cbind(train_y, train_X), method = "class
 tree_preds <- predict(tree_model, newdata = test_X, type = "class")
 cm_tree <- confusionMatrix(tree_preds, test_y)
 
+tree_probs <- predict(tree_model, newdata = test_X, type = "prob")[, "Violent"]
+roc_tree <- roc(test_y, tree_probs)
+auc_tree <- auc(roc_tree)
+
+
 # ----------------------------
 # Random Forest (using full model_data)
 rf_model <- randomForest(crime_category ~ ., data = model_data[train_index, ], ntree = 200)
@@ -138,6 +143,7 @@ cat("Random Forest Accuracy:", cm_rf$overall["Accuracy"], "\n")
 cat("XGBoost Accuracy:", cm_xgb$overall["Accuracy"], "\n\n")
 
 cat("Logistic AUC:", auc(roc_log), "\n")
+cat("Decision Tree AUC:", auc_tree, "\n")
 cat("Random Forest AUC:", auc(roc_rf), "\n")
 cat("XGBoost AUC:", auc(roc_xgb), "\n")
 
