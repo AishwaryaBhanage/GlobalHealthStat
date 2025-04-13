@@ -1,0 +1,147 @@
+---
+title: "Q3-classification"
+author: "Tamali Halder"
+date: "2025-04-13"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+# Load libraries
+library(dplyr)
+library(caret)
+library(pROC)
+library(randomForest)
+library(xgboost)
+library(e1071)
+library(rpart)
+library(rpart.plot)
+library(lubridate)
+
+# Load dataset
+crime_data <- read.csv("final_data.csv")
+colnames(crime_data) <- make.names(colnames(crime_data))
+crime_data$crm_cd_desc <- toupper(crime_data$crm_cd_desc)
+
+# Define violent keywords
+violent_keywords <- c("HOMICIDE", "ASSAULT", "ROBBERY", "KIDNAPPING", "RAPE", 
+                      "BATTERY", "CRIMINAL THREATS", "ARSON", "SHOTS FIRED", 
+                      "ORAL COPULATION", "SEXUAL", "SODOMY", "STALKING",
+                      "CHILD ABUSE", "CHILD STEALING", "BRANDISH WEAPON")
+
+# Create binary label
+crime_data$crime_category <- ifelse(
+  grepl(paste(violent_keywords, collapse = "|"), crime_data$crm_cd_desc),
+  "Violent", "Non-Violent"
+)
+crime_data$crime_category <- factor(crime_data$crime_category, levels = c("Non-Violent", "Violent"))
+
+# Feature engineering
+crime_data$hour <- floor(crime_data$time_occ / 100)
+crime_data$hour <- ifelse(crime_data$hour >= 24, NA, crime_data$hour)
+crime_data$time_of_day <- cut(crime_data$hour,
+                              breaks = c(-1, 6, 12, 18, 24),
+                              labels = c("Night", "Morning", "Afternoon", "Evening"))
+crime_data$day_of_week <- weekdays(as.Date(crime_data$date_occ))
+
+# Filter top premises and areas
+top_premises <- names(sort(table(crime_data$premis_desc), decreasing = TRUE)[1:20])
+top_areas <- names(sort(table(crime_data$area_name), decreasing = TRUE)[1:10])
+crime_data <- crime_data %>%
+  filter(premis_desc %in% top_premises, area_name %in% top_areas)
+
+# Final feature set
+model_data <- crime_data %>%
+  select(crime_category, premis_desc, area_name, time_of_day,
+         hour, day_of_week, vict_sex, vict_descent) %>%
+  na.omit() %>%
+  mutate(across(where(is.character), as.factor),
+         crime_category = factor(crime_category, levels = c("Non-Violent", "Violent")),
+         vict_sex = factor(vict_sex),
+         vict_descent = factor(vict_descent),
+         day_of_week = factor(day_of_week),
+         premis_desc = factor(premis_desc),
+         area_name = factor(area_name),
+         time_of_day = factor(time_of_day))
+
+# Separate predictors and labels
+X_data <- model_data %>% select(-crime_category)
+y_data <- model_data$crime_category
+
+# Dummy encoding
+dummies <- dummyVars(~ ., data = X_data)
+X_encoded <- predict(dummies, newdata = X_data) %>% as.data.frame()
+
+# Remove near-zero variance predictors
+nzv <- nearZeroVar(X_encoded)
+X_encoded <- X_encoded[, -nzv]
+
+# Train-test split
+set.seed(123)
+train_index <- createDataPartition(y_data, p = 0.8, list = FALSE)
+train_X <- X_encoded[train_index, ]
+train_y <- y_data[train_index]
+test_X  <- X_encoded[-train_index, ]
+test_y  <- y_data[-train_index]
+
+# ----------------------------
+# Logistic Regression with step()
+log_model <- glm(train_y ~ ., data = cbind(train_y, train_X), family = "binomial")
+log_model <- step(log_model, direction = "both", trace = FALSE)
+log_probs <- predict(log_model, newdata = test_X, type = "response")
+log_preds <- ifelse(log_probs > 0.5, "Violent", "Non-Violent") %>% factor(levels = c("Non-Violent", "Violent"))
+cm_log <- confusionMatrix(log_preds, test_y)
+roc_log <- roc(test_y, log_probs)
+
+# ----------------------------
+# Decision Tree
+tree_model <- rpart(train_y ~ ., data = cbind(train_y, train_X), method = "class")
+tree_preds <- predict(tree_model, newdata = test_X, type = "class")
+cm_tree <- confusionMatrix(tree_preds, test_y)
+
+# ----------------------------
+# Random Forest (using full model_data)
+rf_model <- randomForest(crime_category ~ ., data = model_data[train_index, ], ntree = 200)
+rf_preds <- predict(rf_model, newdata = model_data[-train_index, ])
+rf_probs <- predict(rf_model, newdata = model_data[-train_index, ], type = "prob")[, "Violent"]
+cm_rf <- confusionMatrix(rf_preds, y_data[-train_index])
+roc_rf <- roc(y_data[-train_index], rf_probs)
+
+# ----------------------------
+# XGBoost
+xgb_train <- xgb.DMatrix(data = as.matrix(train_X), label = as.numeric(train_y) - 1)
+xgb_test  <- xgb.DMatrix(data = as.matrix(test_X), label = as.numeric(test_y) - 1)
+xgb_model <- xgboost(
+  data = xgb_train,
+  objective = "binary:logistic",
+  nrounds = 300,
+  eta = 0.05,
+  max_depth = 6,
+  subsample = 0.8,
+  colsample_bytree = 0.8,
+  verbose = 0
+)
+xgb_probs <- predict(xgb_model, newdata = xgb_test)
+xgb_preds <- ifelse(xgb_probs > 0.5, "Violent", "Non-Violent") %>% factor(levels = c("Non-Violent", "Violent"))
+cm_xgb <- confusionMatrix(xgb_preds, test_y)
+roc_xgb <- roc(test_y, xgb_probs)
+
+# ----------------------------
+# Output Results
+cat("Logistic Regression Accuracy:", cm_log$overall["Accuracy"], "\n")
+cat("Decision Tree Accuracy:", cm_tree$overall["Accuracy"], "\n")
+cat("Random Forest Accuracy:", cm_rf$overall["Accuracy"], "\n")
+cat("XGBoost Accuracy:", cm_xgb$overall["Accuracy"], "\n\n")
+
+cat("Logistic AUC:", auc(roc_log), "\n")
+cat("Random Forest AUC:", auc(roc_rf), "\n")
+cat("XGBoost AUC:", auc(roc_xgb), "\n")
+
+# Visualize tree
+rpart.plot(tree_model)
+
+```
