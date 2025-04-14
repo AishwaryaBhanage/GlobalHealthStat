@@ -21,6 +21,8 @@ library(e1071)
 library(rpart)
 library(rpart.plot)
 library(lubridate)
+library(ggplot2)
+library(reshape2)
 
 # Load dataset
 crime_data <- read.csv("final_data.csv")
@@ -59,14 +61,7 @@ model_data <- crime_data %>%
   select(crime_category, premis_desc, area_name, time_of_day,
          hour, day_of_week, vict_sex, vict_descent) %>%
   na.omit() %>%
-  mutate(across(where(is.character), as.factor),
-         crime_category = factor(crime_category, levels = c("Non-Violent", "Violent")),
-         vict_sex = factor(vict_sex),
-         vict_descent = factor(vict_descent),
-         day_of_week = factor(day_of_week),
-         premis_desc = factor(premis_desc),
-         area_name = factor(area_name),
-         time_of_day = factor(time_of_day))
+  mutate(across(where(is.character), as.factor))
 
 # Separate predictors and labels
 X_data <- model_data %>% select(-crime_category)
@@ -75,8 +70,6 @@ y_data <- model_data$crime_category
 # Dummy encoding
 dummies <- dummyVars(~ ., data = X_data)
 X_encoded <- predict(dummies, newdata = X_data) %>% as.data.frame()
-
-# Remove near-zero variance predictors
 nzv <- nearZeroVar(X_encoded)
 X_encoded <- X_encoded[, -nzv]
 
@@ -89,7 +82,7 @@ test_X  <- X_encoded[-train_index, ]
 test_y  <- y_data[-train_index]
 
 # ----------------------------
-# Logistic Regression with step()
+# Logistic Regression
 log_model <- glm(train_y ~ ., data = cbind(train_y, train_X), family = "binomial")
 log_model <- step(log_model, direction = "both", trace = FALSE)
 log_probs <- predict(log_model, newdata = test_X, type = "response")
@@ -101,15 +94,12 @@ roc_log <- roc(test_y, log_probs)
 # Decision Tree
 tree_model <- rpart(train_y ~ ., data = cbind(train_y, train_X), method = "class")
 tree_preds <- predict(tree_model, newdata = test_X, type = "class")
-cm_tree <- confusionMatrix(tree_preds, test_y)
-
 tree_probs <- predict(tree_model, newdata = test_X, type = "prob")[, "Violent"]
+cm_tree <- confusionMatrix(tree_preds, test_y)
 roc_tree <- roc(test_y, tree_probs)
-auc_tree <- auc(roc_tree)
-
 
 # ----------------------------
-# Random Forest (using full model_data)
+# Random Forest
 rf_model <- randomForest(crime_category ~ ., data = model_data[train_index, ], ntree = 200)
 rf_preds <- predict(rf_model, newdata = model_data[-train_index, ])
 rf_probs <- predict(rf_model, newdata = model_data[-train_index, ], type = "prob")[, "Violent"]
@@ -143,11 +133,22 @@ cat("Random Forest Accuracy:", cm_rf$overall["Accuracy"], "\n")
 cat("XGBoost Accuracy:", cm_xgb$overall["Accuracy"], "\n\n")
 
 cat("Logistic AUC:", auc(roc_log), "\n")
-cat("Decision Tree AUC:", auc_tree, "\n")
+cat("Decision Tree AUC:", auc(roc_tree), "\n")
 cat("Random Forest AUC:", auc(roc_rf), "\n")
 cat("XGBoost AUC:", auc(roc_xgb), "\n")
 
-# Visualize tree
+# ----------------------------
+# ROC Plot
+plot(roc_log, col = "blue", lwd = 2, main = "ROC Curves for Classification Models", xlim = c(1,0), ylim = c(0,1))
+plot(roc_tree, col = "green", add = TRUE, lwd = 2)
+plot(roc_rf, col = "red", add = TRUE, lwd = 2)
+plot(roc_xgb, col = "purple", add = TRUE, lwd = 2)
+legend("bottomright", legend = c("Logistic", "Decision Tree", "Random Forest", "XGBoost"),
+       col = c("blue", "green", "red", "purple"), lwd = 2)
+
+# ----------------------------
+# Visualize Decision Tree
 rpart.plot(tree_model)
+
 
 ```
